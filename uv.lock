@@ -446,7 +446,7 @@ wheels = [
 [[package]]
 name = "python-monorepo-application"
 version = "0.1.0"
-source = { editable = "." }
+source = { virtual = "." }
 
 [[package]]
 name = "report-generator"
