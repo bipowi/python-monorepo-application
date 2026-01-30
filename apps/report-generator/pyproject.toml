@@ -1,0 +1,18 @@
+[project]
+name = "report-generator"
+version = "0.1.0"
+description = "Report generator application"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "data-utils",
+    "logging-config",
+    "db-models",
+]
+
+[tool.uv.sources]
+data-utils = { workspace = true }
+logging-config = { workspace = true }
+db-models = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/report_generator"]

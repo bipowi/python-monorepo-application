@@ -1,0 +1,18 @@
+[project]
+name = "user-dashboard"
+version = "0.1.0"
+description = "User dashboard application"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "auth-helpers",
+    "data-utils",
+    "api-client",
+]
+
+[tool.uv.sources]
+auth-helpers = { workspace = true }
+data-utils = { workspace = true }
+api-client = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/user_dashboard"]

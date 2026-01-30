@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# Build
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Ruff
+.ruff_cache/

@@ -1,0 +1,18 @@
+[project]
+name = "order-service"
+version = "0.1.0"
+description = "Order service application"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "db-models",
+    "api-client",
+    "logging-config",
+]
+
+[tool.uv.sources]
+db-models = { workspace = true }
+api-client = { workspace = true }
+logging-config = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/order_service"]
