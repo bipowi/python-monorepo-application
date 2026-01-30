@@ -1,7 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "report-generator"
 version = "0.1.0"
 description = "Report generator application"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "stendhal.son", email = "stendhal.son@gmail.com" }]
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "data-utils",
@@ -13,6 +20,15 @@ dependencies = [
 data-utils = { workspace = true }
 logging-config = { workspace = true }
 db-models = { workspace = true }
+
+[dependency-groups]
+dev = ["ruff>=0.8", "pytest>=8.0"]
+
+[tool.hatch.envs.default.scripts]
+start = "python -m report_generator"
+lint = "uv run ruff check ."
+format = "uv run ruff format ."
+test = "uv run pytest"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/report_generator"]

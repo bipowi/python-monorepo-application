@@ -1,7 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "user-dashboard"
 version = "0.1.0"
 description = "User dashboard application"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "stendhal.son", email = "stendhal.son@gmail.com" }]
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "auth-helpers",
@@ -10,9 +17,24 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-auth-helpers = { workspace = true }
-data-utils = { workspace = true }
-api-client = { workspace = true }
+auth-helpers = { path = "../../packages/auth-helpers", editable = true }
+data-utils = { path = "../../packages/data-utils", editable = true }
+api-client = { path = "../../packages/api-client", editable = true }
+# Example: from git libs/logger subdirectory
+# api-client = { git = "https://github.com/example/example-repo.git", subdirectory = "libs/logger" }
+# With ref (tag, rev, or branch):
+# api-client = { git = "https://github.com/example/example-repo.git", subdirectory = "libs/logger", tag = "v1.0.0" }
+# api-client = { git = "https://github.com/example/example-repo.git", subdirectory = "libs/logger", rev = "abc123" }
+# api-client = { git = "https://github.com/example/example-repo.git", subdirectory = "libs/logger", branch = "main" }
+
+[dependency-groups]
+dev = ["ruff>=0.8", "pytest>=8.0"]
+
+[tool.hatch.envs.default.scripts]
+start = "python -m company.user_dashboard"
+lint = "uv run ruff check ."
+format = "uv run ruff format ."
+test = "uv run pytest"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/user_dashboard"]
+packages = ["src/company"]

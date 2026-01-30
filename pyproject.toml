@@ -7,30 +7,14 @@ name = "python-monorepo-application"
 version = "0.1.0"
 description = "Python Monorepo Application"
 readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "stendhal.son", email = "stendhal.son@gmail.com" }]
 requires-python = ">=3.11,<3.12"
-dependencies = [
-    "order-service",
-    "user-dashboard",
-    "report-generator",
-    "data-utils",
-    "auth-helpers",
-    "api-client",
-    "logging-config",
-    "db-models",
-]
+dependencies = []
 
-[tool.uv.sources]
-order-service = { workspace = true }
-user-dashboard = { workspace = true }
-report-generator = { workspace = true }
-data-utils = { workspace = true }
-auth-helpers = { workspace = true }
-api-client = { workspace = true }
-logging-config = { workspace = true }
-db-models = { workspace = true }
-
-[tool.hatch.build.targets.wheel]
-packages = ["python_monorepo_application"]
+[tool.uv]
+override-dependencies = ["httpx==0.25.0"]
 
 [tool.uv.workspace]
 members = ["apps/*", "packages/*"]
+exclude = ["apps/user-dashboard"]
