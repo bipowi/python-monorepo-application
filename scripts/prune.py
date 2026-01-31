@@ -164,11 +164,15 @@ IGNORE_PATTERNS = shutil.ignore_patterns(
 
 
 def copy_pyproject_only(src: Path, dest: Path) -> None:
-    """pyproject.toml만 복사합니다 (json/ 디렉토리용)."""
+    """pyproject.toml과 uv.lock(있으면)만 복사합니다 (json/ 디렉토리용)."""
     dest.mkdir(parents=True, exist_ok=True)
     pyproject_src = src / "pyproject.toml"
     if pyproject_src.exists():
         shutil.copy2(pyproject_src, dest / "pyproject.toml")
+    # workspace 제외된 앱은 자체 uv.lock을 가질 수 있음
+    uv_lock_src = src / "uv.lock"
+    if uv_lock_src.exists():
+        shutil.copy2(uv_lock_src, dest / "uv.lock")
 
 
 def copy_full_package(src: Path, dest: Path) -> None:
