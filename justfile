@@ -6,28 +6,34 @@ default:
     @just --list
 
 # Prune an app for Docker build (turbo prune --docker equivalent)
-# Usage: just prune <app-name> [out-dir]
-prune app out="out":
+# Output: out/<app>/json/ and out/<app>/full/
+# Usage: just prune <app-name>
+prune app:
     @echo "Pruning {{app}} for Docker build..."
+    python scripts/prune.py {{app}}
+
+# Prune with custom output directory
+prune-to app out:
+    @echo "Pruning {{app}} to {{out}}..."
     python scripts/prune.py {{app}} --out-dir {{out}}
 
 # Prune order-service
-prune-order-service out="out/order-service":
-    @just prune order-service {{out}}
+prune-order-service:
+    @just prune order-service
 
 # Prune user-dashboard
-prune-user-dashboard out="out/user-dashboard":
-    @just prune user-dashboard {{out}}
+prune-user-dashboard:
+    @just prune user-dashboard
 
 # Prune report-generator
-prune-report-generator out="out/report-generator":
-    @just prune report-generator {{out}}
+prune-report-generator:
+    @just prune report-generator
 
 # Prune all apps
 prune-all:
-    @just prune order-service out/order-service
-    @just prune user-dashboard out/user-dashboard
-    @just prune report-generator out/report-generator
+    @just prune order-service
+    @just prune user-dashboard
+    @just prune report-generator
 
 # Clean pruned outputs
 clean-prune:
@@ -53,17 +59,6 @@ sync:
 lock:
     uv lock
 
-# Build a specific app (after prune)
-# Usage: just docker-build <app-name>
-docker-build app:
-    @echo "Building Docker image for {{app}}..."
-    @if [ ! -d "out/{{app}}" ]; then \
-        echo "Pruned output not found. Running prune first..."; \
-        just prune {{app}} out/{{app}}; \
-    fi
-    @echo "Docker build context ready at: out/{{app}}"
-    @echo "Run: docker build -t {{app}} -f Dockerfile out/{{app}}"
-
 # Show dependency tree for an app
 deps app:
     @echo "Dependencies for {{app}}:"
@@ -79,3 +74,12 @@ deps.discard('{{app}}')
 for d in sorted(deps):
     print(f'  - {d}')
 "
+
+# Show prune output structure
+show-prune app:
+    @echo "Prune output structure for {{app}}:"
+    @if [ -d "out/{{app}}" ]; then \
+        find out/{{app}} -type f | head -30; \
+    else \
+        echo "Not pruned yet. Run: just prune {{app}}"; \
+    fi

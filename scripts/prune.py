@@ -5,6 +5,19 @@ Python Turbo Prune --Docker
 uv 모노레포에서 특정 앱과 그 의존성만 추출하여
 Docker 빌드에 최적화된 구조를 생성합니다.
 
+출력 구조 (turbo prune --docker와 동일):
+  out/<app>/
+  ├── json/                    # pyproject.toml + uv.lock만 (의존성 캐시용)
+  │   ├── pyproject.toml
+  │   ├── uv.lock
+  │   ├── apps/<app>/pyproject.toml
+  │   └── packages/<pkg>/pyproject.toml
+  └── full/                    # 전체 소스 코드
+      ├── pyproject.toml
+      ├── uv.lock
+      ├── apps/<app>/
+      └── packages/<pkg>/
+
 Usage:
     python scripts/prune.py <app-name> [--out-dir <dir>]
 
@@ -16,6 +29,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -51,27 +65,18 @@ def discover_packages(root: Path) -> dict[str, Path]:
     """모노레포 내의 모든 패키지를 탐색합니다."""
     packages = {}
 
-    # apps 탐색
-    apps_dir = root / "apps"
-    if apps_dir.exists():
-        for app_dir in apps_dir.iterdir():
-            pyproject_path = app_dir / "pyproject.toml"
-            if pyproject_path.exists():
-                pyproject = parse_pyproject(pyproject_path)
-                name = get_package_name(pyproject)
-                if name:
-                    packages[name] = app_dir
-
-    # packages 탐색
-    packages_dir = root / "packages"
-    if packages_dir.exists():
-        for pkg_dir in packages_dir.iterdir():
-            pyproject_path = pkg_dir / "pyproject.toml"
-            if pyproject_path.exists():
-                pyproject = parse_pyproject(pyproject_path)
-                name = get_package_name(pyproject)
-                if name:
-                    packages[name] = pkg_dir
+    for base_dir in ["apps", "packages"]:
+        base_path = root / base_dir
+        if base_path.exists():
+            for pkg_dir in base_path.iterdir():
+                if not pkg_dir.is_dir():
+                    continue
+                pyproject_path = pkg_dir / "pyproject.toml"
+                if pyproject_path.exists():
+                    pyproject = parse_pyproject(pyproject_path)
+                    name = get_package_name(pyproject)
+                    if name:
+                        packages[name] = pkg_dir
 
     return packages
 
@@ -109,9 +114,7 @@ def collect_all_dependencies(
     all_packages: dict[str, Path],
     collected: set[str] | None = None
 ) -> set[str]:
-    """
-    타겟 패키지의 모든 의존성을 재귀적으로 수집합니다.
-    """
+    """타겟 패키지의 모든 의존성을 재귀적으로 수집합니다."""
     if collected is None:
         collected = set()
 
@@ -143,31 +146,36 @@ def is_workspace_excluded(root: Path, app_name: str) -> bool:
     excludes = root_pyproject.get("tool", {}).get("uv", {}).get("workspace", {}).get("exclude", [])
 
     for exclude in excludes:
-        # glob 패턴 처리
         if exclude.endswith(app_name) or exclude == f"apps/{app_name}":
             return True
 
     return False
 
 
-def copy_package(src: Path, dest: Path) -> None:
-    """패키지 디렉토리를 복사합니다."""
+IGNORE_PATTERNS = shutil.ignore_patterns(
+    "__pycache__",
+    "*.pyc",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "*.egg-info",
+    ".git",
+)
+
+
+def copy_pyproject_only(src: Path, dest: Path) -> None:
+    """pyproject.toml만 복사합니다 (json/ 디렉토리용)."""
+    dest.mkdir(parents=True, exist_ok=True)
+    pyproject_src = src / "pyproject.toml"
+    if pyproject_src.exists():
+        shutil.copy2(pyproject_src, dest / "pyproject.toml")
+
+
+def copy_full_package(src: Path, dest: Path) -> None:
+    """패키지 전체를 복사합니다 (full/ 디렉토리용)."""
     if dest.exists():
         shutil.rmtree(dest)
-
-    shutil.copytree(
-        src,
-        dest,
-        ignore=shutil.ignore_patterns(
-            "__pycache__",
-            "*.pyc",
-            ".pytest_cache",
-            ".ruff_cache",
-            ".venv",
-            "*.egg-info",
-            ".git",
-        )
-    )
+    shutil.copytree(src, dest, ignore=IGNORE_PATTERNS)
 
 
 def generate_root_pyproject(
@@ -177,12 +185,10 @@ def generate_root_pyproject(
     all_packages: dict[str, Path],
     is_excluded: bool
 ) -> str:
-    """
-    타겟 앱을 위한 루트 pyproject.toml을 생성합니다.
-    """
+    """타겟 앱을 위한 루트 pyproject.toml을 생성합니다."""
     original = parse_pyproject(root / "pyproject.toml")
 
-    # 앱의 상대 경로 결정
+    # 앱의 상대 경로
     app_path = all_packages[target_app]
     app_relative = app_path.relative_to(root)
 
@@ -195,9 +201,6 @@ def generate_root_pyproject(
         pkg_relative = pkg_path.relative_to(root)
         package_paths.append(str(pkg_relative))
 
-    # workspace members 생성
-    members = [str(app_relative)] + sorted(package_paths)
-
     # override-dependencies 유지
     override_deps = original.get("tool", {}).get("uv", {}).get("override-dependencies", [])
     override_section = ""
@@ -205,24 +208,23 @@ def generate_root_pyproject(
         deps_str = ", ".join(f'"{dep}"' for dep in override_deps)
         override_section = f"override-dependencies = [{deps_str}]"
 
-    # workspace 제외된 앱의 경우 다른 처리
+    # workspace members 및 exclude 설정
     if is_excluded:
-        # workspace에서 제외된 앱은 members에 앱을 포함하지 않고
-        # package들만 workspace member로 설정
-        members_without_app = sorted(package_paths)
-        if members_without_app:
-            members_str = ", ".join(f'"{m}"' for m in members_without_app)
-            workspace_section = f"""[tool.uv.workspace]
-members = [{members_str}]"""
-        else:
-            workspace_section = """[tool.uv.workspace]
-members = []"""
+        # workspace 제외된 앱: packages만 members에, 앱은 exclude에
+        members = sorted(package_paths)
+        exclude = [str(app_relative)]
     else:
-        members_str = ", ".join(f'"{m}"' for m in members)
-        workspace_section = f"""[tool.uv.workspace]
-members = [{members_str}]"""
+        # workspace member: 앱과 packages 모두 members에
+        members = [str(app_relative)] + sorted(package_paths)
+        exclude = []
 
-    # 프로젝트 정보
+    members_str = ", ".join(f'"{m}"' for m in members)
+    exclude_str = ", ".join(f'"{e}"' for e in exclude)
+
+    workspace_section = f'[tool.uv.workspace]\nmembers = [{members_str}]'
+    if exclude:
+        workspace_section += f'\nexclude = [{exclude_str}]'
+
     project_info = original.get("project", {})
 
     content = f'''[project]
@@ -245,68 +247,19 @@ package = false
     return content
 
 
-def update_app_pyproject_for_pruned(
-    app_path: Path,
-    required_packages: set[str],
-    all_packages: dict[str, Path],
-    is_excluded: bool,
-    out_dir: Path
-) -> None:
-    """
-    앱의 pyproject.toml을 pruned 구조에 맞게 업데이트합니다.
-    workspace 제외된 앱의 경우 path 참조를 수정합니다.
-    """
-    pyproject_path = app_path / "pyproject.toml"
-    original = parse_pyproject(pyproject_path)
-
-    if not is_excluded:
-        # workspace member인 경우 수정 불필요
-        return
-
-    # workspace 제외된 앱의 경우 path 참조 수정
-    uv_sources = get_uv_sources(original)
-
-    # 앱의 out 디렉토리 내 위치
-    app_relative_in_out = app_path.name  # e.g., "user-dashboard"
-
-    new_sources = {}
-    for dep_name, source in uv_sources.items():
-        if source.get("path"):
-            # 원래 경로에서 패키지 이름 추출
-            pkg_name = dep_name
-            if pkg_name in required_packages:
-                # out 디렉토리 구조에 맞게 경로 수정
-                # apps/user-dashboard -> packages/xxx 는 ../../packages/xxx
-                new_path = f"../../packages/{pkg_name}"
-                new_sources[dep_name] = {"path": new_path, "editable": True}
-
-    if new_sources:
-        # pyproject.toml 내용 읽기
-        with open(pyproject_path) as f:
-            content = f.read()
-
-        # [tool.uv.sources] 섹션 찾아서 교체
-        import re
-
-        # 새 sources 섹션 생성
-        sources_lines = ["[tool.uv.sources]"]
-        for name, source in new_sources.items():
-            path = source["path"]
-            editable = str(source.get("editable", True)).lower()
-            sources_lines.append(f'{name} = {{ path = "{path}", editable = {editable} }}')
-        new_sources_section = "\n".join(sources_lines)
-
-        # 기존 [tool.uv.sources] 섹션 교체
-        pattern = r'\[tool\.uv\.sources\].*?(?=\n\[|\Z)'
-        content = re.sub(pattern, new_sources_section, content, flags=re.DOTALL)
-
-        with open(pyproject_path, 'w') as f:
-            f.write(content)
+def generate_lockfile_json(root: Path, target_app: str, required_packages: set[str]) -> dict:
+    """prune 메타데이터를 JSON으로 생성합니다."""
+    return {
+        "target": target_app,
+        "packages": sorted(required_packages),
+        "generated_by": "python-turbo-prune",
+    }
 
 
 def prune(target_app: str, out_dir: Path, root: Path) -> None:
     """
     타겟 앱과 그 의존성만 포함하는 pruned 구조를 생성합니다.
+    turbo prune --docker와 동일한 json/, full/ 구조를 사용합니다.
     """
     print(f"Pruning for: {target_app}")
     print(f"Output directory: {out_dir}")
@@ -317,7 +270,8 @@ def prune(target_app: str, out_dir: Path, root: Path) -> None:
 
     if target_app not in all_packages:
         print(f"Error: App '{target_app}' not found in monorepo")
-        print(f"Available apps: {[name for name, path in all_packages.items() if 'apps' in str(path)]}")
+        apps = [name for name, path in all_packages.items() if "apps" in str(path)]
+        print(f"Available apps: {apps}")
         sys.exit(1)
 
     # 2. workspace 제외 여부 확인
@@ -328,56 +282,74 @@ def prune(target_app: str, out_dir: Path, root: Path) -> None:
     required_packages = collect_all_dependencies(target_app, all_packages)
     print(f"Required packages: {required_packages}")
 
-    # 4. out 디렉토리 생성
+    # 4. 출력 디렉토리 생성
     if out_dir.exists():
         shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
 
-    # 5. 앱과 패키지 복사
-    for pkg_name in required_packages:
-        pkg_path = all_packages[pkg_name]
-        relative_path = pkg_path.relative_to(root)
-        dest_path = out_dir / relative_path
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
+    json_dir = out_dir / "json"
+    full_dir = out_dir / "full"
+    json_dir.mkdir(parents=True)
+    full_dir.mkdir(parents=True)
 
-        print(f"Copying: {relative_path}")
-        copy_package(pkg_path, dest_path)
-
-    # 6. 루트 pyproject.toml 생성
+    # 5. 루트 pyproject.toml 생성
     root_pyproject_content = generate_root_pyproject(
         root, target_app, required_packages, all_packages, is_excluded
     )
-    (out_dir / "pyproject.toml").write_text(root_pyproject_content)
+
+    (json_dir / "pyproject.toml").write_text(root_pyproject_content)
+    (full_dir / "pyproject.toml").write_text(root_pyproject_content)
     print("Generated: pyproject.toml")
 
-    # 7. workspace 제외된 앱의 pyproject.toml 수정
-    if is_excluded:
-        app_out_path = out_dir / all_packages[target_app].relative_to(root)
-        update_app_pyproject_for_pruned(
-            app_out_path, required_packages, all_packages, is_excluded, out_dir
-        )
-        print(f"Updated: {app_out_path / 'pyproject.toml'}")
+    # 6. 앱과 패키지 복사
+    for pkg_name in required_packages:
+        pkg_path = all_packages[pkg_name]
+        relative_path = pkg_path.relative_to(root)
 
-    # 8. uv.lock 복사
+        # json/ - pyproject.toml만
+        json_pkg_dir = json_dir / relative_path
+        copy_pyproject_only(pkg_path, json_pkg_dir)
+        print(f"[json] Copied: {relative_path}/pyproject.toml")
+
+        # full/ - 전체 복사
+        full_pkg_dir = full_dir / relative_path
+        full_pkg_dir.parent.mkdir(parents=True, exist_ok=True)
+        copy_full_package(pkg_path, full_pkg_dir)
+        print(f"[full] Copied: {relative_path}/")
+
+    # 7. uv.lock 복사
     uv_lock = root / "uv.lock"
     if uv_lock.exists():
-        shutil.copy2(uv_lock, out_dir / "uv.lock")
+        shutil.copy2(uv_lock, json_dir / "uv.lock")
+        shutil.copy2(uv_lock, full_dir / "uv.lock")
         print("Copied: uv.lock")
 
-    # 9. .python-version 복사
+    # 8. .python-version 복사
     python_version = root / ".python-version"
     if python_version.exists():
-        shutil.copy2(python_version, out_dir / ".python-version")
+        shutil.copy2(python_version, json_dir / ".python-version")
+        shutil.copy2(python_version, full_dir / ".python-version")
         print("Copied: .python-version")
 
-    # 10. ruff.toml 복사 (루트)
+    # 9. ruff.toml 복사 (full/만)
     ruff_toml = root / "ruff.toml"
     if ruff_toml.exists():
-        shutil.copy2(ruff_toml, out_dir / "ruff.toml")
-        print("Copied: ruff.toml")
+        shutil.copy2(ruff_toml, full_dir / "ruff.toml")
+        print("Copied: ruff.toml (full/ only)")
 
-    print(f"\nPrune completed! Output: {out_dir}")
-    print(f"To build Docker image, copy '{out_dir}' contents to your Docker context.")
+    # 10. prune.json 메타데이터 생성
+    prune_meta = generate_lockfile_json(root, target_app, required_packages)
+    (out_dir / "prune.json").write_text(json.dumps(prune_meta, indent=2))
+    print("Generated: prune.json")
+
+    print(f"\n{'='*50}")
+    print(f"Prune completed!")
+    print(f"Output: {out_dir}")
+    print(f"  - json/  : Lock files for dependency caching")
+    print(f"  - full/  : Full source code")
+    print(f"\nDockerfile usage:")
+    print(f"  COPY out/{target_app}/json /app")
+    print(f"  RUN uv sync --frozen")
+    print(f"  COPY out/{target_app}/full /app")
 
 
 def main():
@@ -391,8 +363,8 @@ def main():
     parser.add_argument(
         "--out-dir",
         "-o",
-        default="out",
-        help="Output directory (default: out)"
+        default=None,
+        help="Output directory (default: out/<app>)"
     )
     parser.add_argument(
         "--root",
@@ -404,7 +376,12 @@ def main():
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    out_dir = Path(args.out_dir).resolve()
+
+    # 기본 출력 디렉토리: out/<app>
+    if args.out_dir:
+        out_dir = Path(args.out_dir).resolve()
+    else:
+        out_dir = root / "out" / args.app
 
     prune(args.app, out_dir, root)
 
