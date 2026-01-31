@@ -6,7 +6,7 @@ uv 모노레포에서 특정 앱과 그 의존성만 추출하여
 Docker 빌드에 최적화된 구조를 생성합니다.
 
 출력 구조 (turbo prune --docker와 동일):
-  out/<app>/
+  out/
   ├── json/                    # pyproject.toml + uv.lock만 (의존성 캐시용)
   │   ├── pyproject.toml
   │   ├── uv.lock
@@ -342,14 +342,14 @@ def prune(target_app: str, out_dir: Path, root: Path) -> None:
     print("Generated: prune.json")
 
     print(f"\n{'='*50}")
-    print(f"Prune completed!")
+    print(f"Prune completed for: {target_app}")
     print(f"Output: {out_dir}")
     print(f"  - json/  : Lock files for dependency caching")
     print(f"  - full/  : Full source code")
     print(f"\nDockerfile usage:")
-    print(f"  COPY out/{target_app}/json /app")
+    print(f"  COPY out/json /app")
     print(f"  RUN uv sync --frozen")
-    print(f"  COPY out/{target_app}/full /app")
+    print(f"  COPY out/full /app")
 
 
 def main():
@@ -377,11 +377,11 @@ def main():
 
     root = Path(args.root).resolve()
 
-    # 기본 출력 디렉토리: out/<app>
+    # 기본 출력 디렉토리: out/
     if args.out_dir:
         out_dir = Path(args.out_dir).resolve()
     else:
-        out_dir = root / "out" / args.app
+        out_dir = root / "out"
 
     prune(args.app, out_dir, root)
 

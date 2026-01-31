@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Prune an app for Docker build (turbo prune --docker equivalent)
-# Output: out/<app>/json/ and out/<app>/full/
+# Output: out/json/ and out/full/
 # Usage: just prune <app-name>
 prune app:
     @echo "Pruning {{app}} for Docker build..."
@@ -16,24 +16,6 @@ prune app:
 prune-to app out:
     @echo "Pruning {{app}} to {{out}}..."
     python scripts/prune.py {{app}} --out-dir {{out}}
-
-# Prune order-service
-prune-order-service:
-    @just prune order-service
-
-# Prune user-dashboard
-prune-user-dashboard:
-    @just prune user-dashboard
-
-# Prune report-generator
-prune-report-generator:
-    @just prune report-generator
-
-# Prune all apps
-prune-all:
-    @just prune order-service
-    @just prune user-dashboard
-    @just prune report-generator
 
 # Clean pruned outputs
 clean-prune:
@@ -76,10 +58,10 @@ for d in sorted(deps):
 "
 
 # Show prune output structure
-show-prune app:
-    @echo "Prune output structure for {{app}}:"
-    @if [ -d "out/{{app}}" ]; then \
-        find out/{{app}} -type f | head -30; \
+show-prune:
+    @echo "Prune output structure:"
+    @if [ -d "out" ]; then \
+        find out -type f | head -30; \
     else \
-        echo "Not pruned yet. Run: just prune {{app}}"; \
+        echo "Not pruned yet. Run: just prune <app>"; \
     fi
