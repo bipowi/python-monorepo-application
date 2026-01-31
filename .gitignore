@@ -17,3 +17,6 @@ build/
 
 # Ruff
 .ruff_cache/
+
+# Prune output
+out/
